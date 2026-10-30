@@ -12,18 +12,14 @@ export default {
 
     if (url.pathname === "/create" && request.method === "POST") {
       const code = "KBN-" + Math.floor(100000 + Math.random() * 900000);
-      const id = env.ROOMS.idFromName(code);
-      const stub = env.ROOMS.get(id);
+      const stub = env.ROOMS.get(env.ROOMS.idFromName(code));
 
       const init = await stub.fetch("https://room/init", {
         method: "POST"
       });
 
       if (!init.ok) {
-        return Response.json(
-          { error: "Gagal membuat ruang." },
-          { status: 503 }
-        );
+        return Response.json({ error: "Gagal membuat ruang" }, { status: 503 });
       }
 
       return Response.json({ code });
@@ -38,20 +34,16 @@ export default {
         return new Response("Kode atau ID tidak valid", { status: 400 });
       }
 
-      const id = env.ROOMS.idFromName(room);
+      const stub = env.ROOMS.get(env.ROOMS.idFromName(room));
 
-      return env.ROOMS.get(id).fetch(
-        new Request(
-          "https://room/connect?name=" +
-          encodeURIComponent(name) +
-          "&id=" +
-          encodeURIComponent(playerId),
-          request
-        )
-      );
+      return stub.fetch(new Request(
+        "https://room/connect?name=" + encodeURIComponent(name) +
+        "&id=" + encodeURIComponent(playerId),
+        request
+      ));
     }
 
-    return new Response("GreenLife Farm Mabar Worker");
+    return new Response("GreenLife Farm Mabar");
   }
 };
 
@@ -66,23 +58,20 @@ export class Room {
   }
 
   players() {
-    return this.sockets()
-      .map(ws => {
-        try {
-          return ws.deserializeAttachment();
-        } catch (_) {
-          return null;
-        }
-      })
-      .filter(Boolean);
+    return this.sockets().map(ws => {
+      try {
+        return ws.deserializeAttachment();
+      } catch (_) {
+        return null;
+      }
+    }).filter(Boolean);
   }
 
-  broadcast(payload) {
-    const msg = JSON.stringify(payload);
-
+  broadcast(data) {
+    const message = JSON.stringify(data);
     for (const ws of this.sockets()) {
       try {
-        ws.send(msg);
+        ws.send(message);
       } catch (_) {}
     }
   }
@@ -94,11 +83,13 @@ export class Room {
       return new Response("ok");
     }
 
-    if (
-      url.pathname !== "/connect" ||
-      request.headers.get("Upgrade") !== "websocket"
-    ) {
+    if (url.pathname !== "/connect" ||
+        request.headers.get("Upgrade") !== "websocket") {
       return new Response("WebSocket upgrade required", { status: 426 });
+    }
+
+    if (this.sockets().length >= 5) {
+      return new Response("Desa penuh (maksimal 5 pemain)", { status: 409 });
     }
 
     const pair = new WebSocketPair();
@@ -107,24 +98,11 @@ export class Room {
 
     const name = (url.searchParams.get("name") || "Petani").slice(0, 18);
     const id = url.searchParams.get("id");
-
-    if (this.sockets().length >= 5) {
-      return new Response(
-        "Desa penuh (maksimal 5 pemain termasuk host)",
-        { status: 409 }
-      );
-    }
-
     const isHost = this.players().length === 0;
 
     server.serializeAttachment({
-      id,
-      name,
-      isHost,
-      x: 0,
-      y: 0,
-      z: 0,
-      ry: 0
+      id, name, isHost,
+      x: 0, y: 0, z: 0, ry: 0
     });
 
     this.ctx.acceptWebSocket(server);
@@ -154,38 +132,26 @@ export class Room {
       return;
     }
 
-    if (!data || !["move", "world", "proposal"].includes(data.type)) {
-      return;
-    }
+    if (!data || !["move", "world", "proposal"].includes(data.type)) return;
 
-    const p = ws.deserializeAttachment();
-    if (!p) return;
+    const player = ws.deserializeAttachment();
+    if (!player) return;
 
     if (data.type === "world") {
-      if (!p.isHost || !data.state || data.state.v !== 1) return;
+      if (!player.isHost || !data.state || data.state.v !== 1) return;
+      if (JSON.stringify(data.state).length > 28000) return;
 
-      const raw = JSON.stringify(data.state);
-      if (raw.length > 28000) return;
-
-      this.broadcast({
-        type: "world",
-        state: data.state
-      });
-
+      this.broadcast({ type: "world", state: data.state });
       return;
     }
 
     if (data.type === "proposal") {
-      if (p.isHost || !data.state || data.state.v !== 1) return;
-
-      const raw = JSON.stringify(data.state);
-      if (raw.length > 28000) return;
+      if (player.isHost || !data.state || data.state.v !== 1) return;
+      if (JSON.stringify(data.state).length > 28000) return;
 
       for (const target of this.sockets()) {
         try {
-          const recipient = target.deserializeAttachment();
-
-          if (recipient && recipient.isHost) {
+          if (target.deserializeAttachment()?.isHost) {
             target.send(JSON.stringify({
               type: "proposal",
               state: data.state
@@ -193,25 +159,15 @@ export class Room {
           }
         } catch (_) {}
       }
-
       return;
     }
 
-    p.x = Number.isFinite(data.x)
-      ? Math.max(-10000, Math.min(10000, data.x))
-      : p.x;
+    player.x = Number.isFinite(data.x) ? Math.max(-10000, Math.min(10000, data.x)) : player.x;
+    player.y = Number.isFinite(data.y) ? Math.max(-100, Math.min(1000, data.y)) : player.y;
+    player.z = Number.isFinite(data.z) ? Math.max(-10000, Math.min(10000, data.z)) : player.z;
+    player.ry = Number.isFinite(data.ry) ? data.ry : player.ry;
 
-    p.y = Number.isFinite(data.y)
-      ? Math.max(-100, Math.min(1000, data.y))
-      : p.y;
-
-    p.z = Number.isFinite(data.z)
-      ? Math.max(-10000, Math.min(10000, data.z))
-      : p.z;
-
-    p.ry = Number.isFinite(data.ry) ? data.ry : p.ry;
-
-    ws.serializeAttachment(p);
+    ws.serializeAttachment(player);
 
     this.broadcast({
       type: "players",
@@ -220,17 +176,13 @@ export class Room {
   }
 
   async webSocketClose(ws) {
-    let p = null;
+    let player = null;
 
     try {
-      p = ws.deserializeAttachment();
+      player = ws.deserializeAttachment();
     } catch (_) {}
 
-    try {
-      ws.close();
-    } catch (_) {}
-
-    if (p && p.isHost) {
+    if (player?.isHost) {
       for (const other of this.sockets()) {
         try {
           other.send(JSON.stringify({ type: "host_left" }));
@@ -248,4 +200,5 @@ export class Room {
   async webSocketError(ws) {
     return this.webSocketClose(ws);
   }
-}
+                              }
+          
