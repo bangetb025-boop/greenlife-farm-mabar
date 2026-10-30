@@ -19,7 +19,10 @@ export default {
       });
 
       if (!init.ok) {
-        return Response.json({ error: "Gagal membuat ruang" }, { status: 503 });
+        return Response.json(
+          { error: "Gagal membuat ruang" },
+          { status: 503 }
+        );
       }
 
       return Response.json({ code });
@@ -69,6 +72,7 @@ export class Room {
 
   broadcast(data) {
     const message = JSON.stringify(data);
+
     for (const ws of this.sockets()) {
       try {
         ws.send(message);
@@ -83,8 +87,10 @@ export class Room {
       return new Response("ok");
     }
 
-    if (url.pathname !== "/connect" ||
-        request.headers.get("Upgrade") !== "websocket") {
+    if (
+      url.pathname !== "/connect" ||
+      request.headers.get("Upgrade") !== "websocket"
+    ) {
       return new Response("WebSocket upgrade required", { status: 426 });
     }
 
@@ -101,8 +107,13 @@ export class Room {
     const isHost = this.players().length === 0;
 
     server.serializeAttachment({
-      id, name, isHost,
-      x: 0, y: 0, z: 0, ry: 0
+      id,
+      name,
+      isHost,
+      x: 0,
+      y: 0,
+      z: 0,
+      ry: 0
     });
 
     this.ctx.acceptWebSocket(server);
@@ -132,7 +143,9 @@ export class Room {
       return;
     }
 
-    if (!data || !["move", "world", "proposal"].includes(data.type)) return;
+    if (!data || !["move", "world", "proposal"].includes(data.type)) {
+      return;
+    }
 
     const player = ws.deserializeAttachment();
     if (!player) return;
@@ -141,7 +154,10 @@ export class Room {
       if (!player.isHost || !data.state || data.state.v !== 1) return;
       if (JSON.stringify(data.state).length > 28000) return;
 
-      this.broadcast({ type: "world", state: data.state });
+      this.broadcast({
+        type: "world",
+        state: data.state
+      });
       return;
     }
 
@@ -162,9 +178,18 @@ export class Room {
       return;
     }
 
-    player.x = Number.isFinite(data.x) ? Math.max(-10000, Math.min(10000, data.x)) : player.x;
-    player.y = Number.isFinite(data.y) ? Math.max(-100, Math.min(1000, data.y)) : player.y;
-    player.z = Number.isFinite(data.z) ? Math.max(-10000, Math.min(10000, data.z)) : player.z;
+    player.x = Number.isFinite(data.x)
+      ? Math.max(-10000, Math.min(10000, data.x))
+      : player.x;
+
+    player.y = Number.isFinite(data.y)
+      ? Math.max(-100, Math.min(1000, data.y))
+      : player.y;
+
+    player.z = Number.isFinite(data.z)
+      ? Math.max(-10000, Math.min(10000, data.z))
+      : player.z;
+
     player.ry = Number.isFinite(data.ry) ? data.ry : player.ry;
 
     ws.serializeAttachment(player);
@@ -200,5 +225,4 @@ export class Room {
   async webSocketError(ws) {
     return this.webSocketClose(ws);
   }
-                              }
-          
+}
